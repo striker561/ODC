@@ -6,7 +6,7 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 // ── Skin colour constants ─────────────────────────────────────────────────
 const SKIN_BASE = new THREE.Color(0xd4a07a); // warm Caucasian flesh
 const SKIN_PALM = new THREE.Color(0xc48a6a); // palm — slightly lighter
-const SKIN_TIP  = new THREE.Color(0xd47a5a); // fingertip — redder (blood)
+const SKIN_TIP = new THREE.Color(0xd47a5a); // fingertip — redder (blood)
 const SKIN_KNUCKLE = new THREE.Color(0xa06850); // knuckle — slightly darker
 const SSS_GLOW = new THREE.Color(0xff6633); // subsurface warm glow
 
@@ -208,10 +208,12 @@ function createSkinNormalMap(size = 384) {
       let ny = (hD - hU) * strength;
       let nz = 1.0;
       const len = Math.hypot(nx, ny, nz);
-      nx /= len; ny /= len; nz /= len;
+      nx /= len;
+      ny /= len;
+      nz /= len;
 
       const px = (y * size + x) * 4;
-      data[px]     = Math.round((nx * 0.5 + 0.5) * 255);
+      data[px] = Math.round((nx * 0.5 + 0.5) * 255);
       data[px + 1] = Math.round((ny * 0.5 + 0.5) * 255);
       data[px + 2] = Math.round((nz * 0.5 + 0.5) * 255);
       data[px + 3] = 255;
@@ -248,7 +250,10 @@ function applySkinVertexColors(mesh, fingers, boneIndexToFinger) {
       if (bi >= boneIndexToFinger.length) continue;
       const w = skinWeight.getComponent(v, slot);
       const fi = boneIndexToFinger[bi];
-      if (fi >= 0 && w > maxW) { maxW = w; fingerIdx = fi; }
+      if (fi >= 0 && w > maxW) {
+        maxW = w;
+        fingerIdx = fi;
+      }
     }
 
     const y = pos.getY(v);
@@ -260,7 +265,7 @@ function applySkinVertexColors(mesh, fingers, boneIndexToFinger) {
       color = SKIN_PALM.clone();
     }
 
-    colors[v * 3]     = color.r;
+    colors[v * 3] = color.r;
     colors[v * 3 + 1] = color.g;
     colors[v * 3 + 2] = color.b;
   }
@@ -273,8 +278,7 @@ function applySkinMaterial(mesh, fingers, boneIndexToFinger) {
   if (!mesh.isSkinnedMesh) return;
 
   // Remove old color attribute
-  if (mesh.geometry.attributes.color)
-    mesh.geometry.deleteAttribute("color");
+  if (mesh.geometry.attributes.color) mesh.geometry.deleteAttribute("color");
 
   const normalMap = createSkinNormalMap();
 
@@ -451,7 +455,7 @@ const HandModel = forwardRef(function HandModel({ children }, ref) {
       root.updateMatrixWorld(true);
       groupRef.current?.updateMatrixWorld(true);
     },
-    applyFingerPose: (fingerIndex, progress) => {
+    applyFingerPose: (fingerIndex, progress, opts = {}) => {
       const data = dataRef.current;
       if (!data) return;
 
@@ -470,8 +474,9 @@ const HandModel = forwardRef(function HandModel({ children }, ref) {
         bone.rotation[axis] = orig[axis] + delta;
       });
 
-      // ── Fingertip blush ────────────────────────────────────────────
-      // Warm the emissive intensity based on hover progress
+      // ── Fingertip blush (hover only — skipped during sign sequence) ─
+      if (opts.skipEmissive) return;
+
       const mesh = data.skinnedMesh;
       if (mesh) {
         const mats = Array.isArray(mesh.material)

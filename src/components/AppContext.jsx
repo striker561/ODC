@@ -5,6 +5,8 @@ const AppContext = createContext(null);
 export function AppProvider({ children }) {
   const [hoveredFinger, setHoveredFinger] = useState(null);
   const [showHitZones, setShowHitZones] = useState(false);
+  const [signModeActive, setSignModeActive] = useState(false);
+  const [currentSign, setCurrentSign] = useState(null);
 
   return (
     <AppContext.Provider
@@ -13,6 +15,10 @@ export function AppProvider({ children }) {
         setHoveredFinger,
         showHitZones,
         setShowHitZones,
+        signModeActive,
+        setSignModeActive,
+        currentSign,
+        setCurrentSign,
       }}
     >
       {children}
