@@ -5,9 +5,9 @@
 }
 
 body {
-  background: #0a0a0f;
+  background: radial-gradient(ellipse at 50% 40%, #0d1b3e 0%, #050508 72%);
   overflow: hidden;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
 }
 
 #canvas-container {
@@ -16,8 +16,126 @@ body {
   position: relative;
 }
 
+#canvas-container canvas {
+  position: relative;
+  z-index: 1;
+}
+
+.chakra-dust {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.chakra-particle {
+  position: absolute;
+  bottom: -8px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 210, 120, 0.7) 0%,
+    rgba(255, 150, 50, 0.2) 45%,
+    transparent 70%
+  );
+  box-shadow: 0 0 4px rgba(255, 180, 60, 0.35);
+  animation: chakra-float linear infinite;
+  opacity: 0;
+}
+
+@keyframes chakra-float {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.45;
+  }
+  85% {
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateY(-110vh) translateX(var(--drift, 0px));
+    opacity: 0;
+  }
+}
+
 @keyframes shimmer {
-  0% { width: 20%; }
-  50% { width: 80%; }
-  100% { width: 20%; }
+  0% {
+    width: 20%;
+  }
+  50% {
+    width: 80%;
+  }
+  100% {
+    width: 20%;
+  }
+}
+
+.ui-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 40px;
+}
+
+.finger-label {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #ffd899;
+  opacity: 0;
+  transition: opacity 0.3s;
+  text-shadow: 0 0 24px rgba(255, 180, 80, 0.7);
+}
+
+.finger-label.visible {
+  opacity: 1;
+}
+
+.hit-zones-toggle {
+  position: absolute;
+  bottom: 36px;
+  left: 28px;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 220, 160, 0.2);
+  color: rgba(255, 220, 180, 0.65);
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hit-zones-toggle.active {
+  background: rgba(255, 170, 60, 0.12);
+  border-color: rgba(255, 180, 80, 0.45);
+  color: #ffd080;
+  box-shadow: 0 0 18px rgba(255, 160, 50, 0.2);
+}
+
+.hint {
+  color: rgba(255, 220, 180, 0.35);
+  font-size: 13px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  transition: opacity 0.5s;
+}
+
+.hint.hidden {
+  opacity: 0;
 }

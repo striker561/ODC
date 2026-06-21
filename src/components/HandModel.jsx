@@ -42,7 +42,6 @@ export const FINGERS = [
 ];
 
 const PALM_BONE = "Bone001_01";
-const PALM_COLOR = new THREE.Color("#0a0e18");
 
 function boneKey(name) {
   return name.replace(/\./g, "");
@@ -133,64 +132,128 @@ function buildBoneIndexToFinger(skeleton, fingers) {
   );
 }
 
-function applyCyberMaterial(mesh, fingers) {
-  if (!mesh.isSkinnedMesh) return null;
+/**
+ * Height field → normal map with visible pore / crease patterns.
+ */
+let cachedSkinNormalMap = null;
 
-  const { geometry, skeleton } = mesh;
-  const skinIndex = geometry.attributes.skinIndex;
-  const skinWeight = geometry.attributes.skinWeight;
-  if (!skinIndex || !skinWeight) return null;
+function createSkinNormalMap(size = 384) {
+  if (cachedSkinNormalMap) return cachedSkinNormalMap;
 
-  const boneIndexToFinger = buildBoneIndexToFinger(skeleton, fingers);
-  const fingerColors = fingers.map((f) => new THREE.Color(f.color));
-  const count = geometry.attributes.position.count;
-  const colors = new Float32Array(count * 3);
-
-  for (let v = 0; v < count; v++) {
-    let bestFinger = -1;
-    let bestWeight = 0;
-
-    for (let slot = 0; slot < 4; slot++) {
-      const boneIdx = skinIndex.getComponent(v, slot);
-      const weight = skinWeight.getComponent(v, slot);
-      const fingerIndex = boneIndexToFinger[boneIdx];
-      if (fingerIndex >= 0 && weight > bestWeight) {
-        bestWeight = weight;
-        bestFinger = fingerIndex;
-      }
-    }
-
-    const color =
-      bestFinger >= 0 && bestWeight > 0.04
-        ? fingerColors[bestFinger]
-        : PALM_COLOR;
-
-    colors[v * 3] = color.r;
-    colors[v * 3 + 1] = color.g;
-    colors[v * 3 + 2] = color.b;
+  function hash(x, y) {
+    let h = x * 374761393 + y * 668265263;
+    h = (h ^ (h >> 13)) * 1274126177;
+    return (h ^ (h >> 16)) & 0xff;
   }
 
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  function smoothNoise(x, y) {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    const fx = x - ix;
+    const fy = y - iy;
+    const ux = fx * fx * (3 - 2 * fx);
+    const uy = fy * fy * (3 - 2 * fy);
+    const a = hash(ix, iy);
+    const b = hash(ix + 1, iy);
+    const c = hash(ix, iy + 1);
+    const d = hash(ix + 1, iy + 1);
+    return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+  }
 
-  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-  mats.forEach((mat) => {
-    if (!mat.isMeshStandardMaterial && !mat.isMeshPhysicalMaterial) return;
+  function fbm(x, y, octaves = 4) {
+    let value = 0;
+    let amplitude = 0.5;
+    let freq = 6;
+    for (let i = 0; i < octaves; i++) {
+      value += amplitude * (smoothNoise(x * freq, y * freq) / 255);
+      amplitude *= 0.5;
+      freq *= 2.1;
+    }
+    return value;
+  }
 
-    mat.map = null;
-    mat.metalnessMap = null;
-    mat.roughnessMap = null;
-    mat.aoMap = null;
-    // keep normalMap for surface detail
-    mat.vertexColors = true;
-    mat.color.set(0xffffff);
-    mat.metalness = 0.82;
-    mat.roughness = 0.22;
-    mat.emissive.set(0x040818);
-    mat.emissiveIntensity = 0.55;
-    mat.envMapIntensity = 1.2;
+  function heightAt(u, v) {
+    const pores = fbm(u * 14, v * 14, 3) * 0.22;
+    const fine = fbm(u * 28 + 17, v * 28 + 31, 2) * 0.06;
+    const creases = fbm(u * 2.8 + 90, v * 2.8, 2) * 0.05;
+    return pores + fine + creases;
+  }
+
+  const heights = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      heights[y * size + x] = heightAt(x / size, y / size);
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const imageData = ctx.createImageData(size, size);
+  const data = imageData.data;
+  const strength = 1.5;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const hL = heights[y * size + Math.max(0, x - 1)];
+      const hR = heights[y * size + Math.min(size - 1, x + 1)];
+      const hD = heights[Math.max(0, y - 1) * size + x];
+      const hU = heights[Math.min(size - 1, y + 1) * size + x];
+
+      let nx = (hL - hR) * strength;
+      let ny = (hD - hU) * strength;
+      let nz = 1.0;
+      const len = Math.hypot(nx, ny, nz);
+      nx /= len;
+      ny /= len;
+      nz /= len;
+
+      const px = (y * size + x) * 4;
+      data[px] = Math.round((nx * 0.5 + 0.5) * 255);
+      data[px + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      data[px + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      data[px + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2, 2);
+  texture.colorSpace = THREE.NoColorSpace;
+  cachedSkinNormalMap = texture;
+  return texture;
+}
+
+function applySkinMaterial(mesh) {
+  if (!mesh.isSkinnedMesh) return;
+
+  if (mesh.geometry.attributes.color) {
+    mesh.geometry.deleteAttribute("color");
+  }
+
+  const normalMap = createSkinNormalMap();
+
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(0xa07858),
+    roughness: 0.5,
+    metalness: 0.0,
+    clearcoat: 0.08,
+    clearcoatRoughness: 0.45,
+    sheen: 0.2,
+    sheenColor: new THREE.Color(0xffbb99),
+    sheenRoughness: 0.55,
+    emissive: new THREE.Color(0x221108),
+    emissiveIntensity: 0.045,
+    normalMap,
+    normalScale: new THREE.Vector2(0.4, 0.4),
+    envMapIntensity: 0.26,
   });
 
-  return boneIndexToFinger;
+  mesh.material = mat;
 }
 
 function buildHandData(model) {
@@ -220,7 +283,8 @@ function buildHandData(model) {
   model.traverse((obj) => {
     if (obj.isSkinnedMesh) {
       skinnedMesh = obj;
-      boneIndexToFinger = applyCyberMaterial(obj, fingers);
+      applySkinMaterial(obj);
+      boneIndexToFinger = buildBoneIndexToFinger(obj.skeleton, fingers);
     }
   });
 
