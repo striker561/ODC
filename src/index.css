@@ -5,7 +5,7 @@
 }
 
 body {
-  background: radial-gradient(ellipse at 50% 40%, #0d1b3e 0%, #050508 72%);
+  background: #030306;
   overflow: hidden;
   font-family: "Segoe UI", system-ui, sans-serif;
 }

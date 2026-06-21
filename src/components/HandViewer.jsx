@@ -1,12 +1,21 @@
-import { Suspense, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
-import { OrbitControls, Environment } from "@react-three/drei";
+import { Suspense, useRef, useEffect } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
+import { OrbitControls } from "@react-three/drei";
 import HandModel from "./HandModel";
 import HitZones from "./HitZones";
 import LoadingScreen from "./LoadingScreen";
 import Scene from "./Scene";
 import { useAppContext } from "./AppContext";
 import { useFingerAnimation } from "../hooks/useFingerAnimation";
+
+function SceneBackground() {
+  const { scene } = useThree();
+  useEffect(() => {
+    scene.background = new THREE.Color(0x030306);
+  }, [scene]);
+  return null;
+}
 
 function HandInteraction() {
   const handRef = useRef(null);
@@ -37,8 +46,8 @@ function HandInteraction() {
 export default function HandViewer() {
   return (
     <>
+      <SceneBackground />
       <Scene />
-      <Environment preset="night" environmentIntensity={0.22} />
       <Suspense fallback={<LoadingScreen />}>
         <HandInteraction />
       </Suspense>
@@ -46,7 +55,6 @@ export default function HandViewer() {
         enableDamping
         dampingFactor={0.06}
         enablePan={false}
-        enableZoom={false}
         target={[0, 0.02, 0]}
         minPolarAngle={Math.PI * 0.22}
         maxPolarAngle={Math.PI * 0.48}

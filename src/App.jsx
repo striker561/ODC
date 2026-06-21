@@ -13,12 +13,11 @@ function HandCanvas() {
       camera={{ fov: 42, position: [0, 0.08, 0.5], near: 0.01, far: 100 }}
       gl={{
         antialias: true,
-        alpha: true,
         shadowMap: { enabled: true, type: "PCFSoftShadowMap" },
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.0,
+        toneMappingExposure: 1.15,
       }}
-      style={{ display: "block", background: "transparent" }}
+      style={{ display: "block" }}
       onPointerMissed={() => setHoveredFinger(null)}
     >
       <HandViewer />

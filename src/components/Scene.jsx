@@ -3,35 +3,37 @@ import { FogExp2 } from "three";
 export default function Scene() {
   return (
     <>
-      <fogExp2 attach="fog" args={[0x030306, 0.022]} />
+      <fogExp2 attach="fog" args={[0x030306, 0.018]} />
 
-      <ambientLight color={0x445577} intensity={0.2} />
+      {/* Cool ambient — just barely lifts shadows */}
+      <ambientLight color={0x445566} intensity={0.12} />
 
+      {/* Main key — warm studio light, large soft source */}
       <directionalLight
-        color={0xfff0e4}
-        intensity={1.5}
-        position={[1.4, 2.2, 1.0]}
+        color={0xffeedd}
+        intensity={2.2}
+        position={[1.8, 2.8, 1.5]}
       />
 
+      {/* Warm fill from below — bounces off environment */}
       <directionalLight
-        color={0x886644}
-        intensity={0.28}
-        position={[-0.8, -0.6, 0.6]}
+        color={0xffbb77}
+        intensity={0.35}
+        position={[-0.6, -1.2, 0.8]}
       />
 
+      {/* Cool rim — defines shape edge */}
       <directionalLight
-        color={0x6688cc}
-        intensity={0.45}
-        position={[-1.6, 0.4, -1.2]}
+        color={0x88bbff}
+        intensity={0.5}
+        position={[-1.8, 0.6, -1.5]}
       />
 
-      <spotLight
-        color={0xffddbb}
-        intensity={0.9}
-        angle={0.45}
-        penumbra={0.6}
-        position={[0.6, 1.2, 1.4]}
-        castShadow
+      {/* Warm accent from right — fills front shadows */}
+      <directionalLight
+        color={0xffdd99}
+        intensity={0.3}
+        position={[0.5, 0.0, 1.8]}
       />
     </>
   );
