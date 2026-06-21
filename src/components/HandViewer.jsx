@@ -1,23 +1,56 @@
-import { useEffect } from 'react';
-import { useThree } from '@react-three/fiber';
-import * as THREE from 'three';
-import { OrbitControls } from '@react-three/drei';
-import HandModel from './HandModel';
+import { Suspense, useRef, useEffect } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
+import { OrbitControls } from "@react-three/drei";
+import HandModel from "./HandModel";
+import HitZones from "./HitZones";
+import LoadingScreen from "./LoadingScreen";
+import Scene from "./Scene";
+import { useAppContext } from "./AppContext";
+import { useFingerAnimation } from "../hooks/useFingerAnimation";
+
+function HandInteraction() {
+  const handRef = useRef(null);
+  const { hoveredFinger, setHoveredFinger, showHitZones } = useAppContext();
+  const fingerState = useFingerAnimation(hoveredFinger);
+
+  useFrame(() => {
+    const api = handRef.current;
+    if (!api) return;
+    api.updateMatrices();
+    fingerState.current.forEach((s, i) => api.applyFingerPose(i, s.progress));
+    api.updateMatrices();
+  }, -1);
+
+  return (
+    <HandModel ref={handRef}>
+      <HitZones
+        handRef={handRef}
+        hoveredFinger={hoveredFinger}
+        visible={showHitZones}
+        onPointerEnter={setHoveredFinger}
+        onPointerLeave={() => setHoveredFinger(null)}
+      />
+    </HandModel>
+  );
+}
 
 export default function HandViewer() {
   return (
     <>
       <SceneBackground />
-      <ambientLight intensity={1} />
-      <directionalLight position={[1, 2, 1]} intensity={2} />
-      <directionalLight position={[-1, 0.5, -1]} intensity={0.5} color="#6699ff" />
-      <mesh position={[0, 0, 0]}>
-        <boxGeometry args={[0.02, 0.02, 0.02]} />
-        <meshStandardMaterial color="hotpink" />
-      </mesh>
-      <axesHelper args={[0.05]} />
-      <HandModel />
-      <OrbitControls enableDamping />
+      <Scene />
+      <Suspense fallback={<LoadingScreen />}>
+        <HandInteraction />
+      </Suspense>
+      <OrbitControls
+        enableDamping
+        dampingFactor={0.06}
+        enablePan={false}
+        target={[0, 0.02, 0]}
+        minPolarAngle={Math.PI * 0.22}
+        maxPolarAngle={Math.PI * 0.48}
+      />
     </>
   );
 }

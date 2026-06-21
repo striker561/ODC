@@ -1,68 +1,88 @@
-import { useFrame } from '@react-three/fiber';
-import { useRef, useMemo } from 'react';
-import * as THREE from 'three';
+import { useFrame } from "@react-three/fiber";
+import { useRef, useMemo } from "react";
+import * as THREE from "three";
+import { FINGERS } from "./HandModel";
 
-/**
- * Invisible hit spheres at each finger-bone world position.
- * Uses R3F pointer events for clean hover detection.
- */
-export default function HitZones({ handRef, onPointerEnter, onPointerLeave }) {
-  const meshesRef = useRef([]);
-
-  // Build zones from current finger data once (ref is stable)
-  const zones = useMemo(() => {
-    const result = [];
-    const count = handRef.current?.getFingerCount?.() ?? 5;
-
-    for (let fi = 0; fi < count; fi++) {
-      // We'll use 3 joints per finger; dynamic count from actual bones if possible
-      const jointCount = 3;
-      for (let ji = 0; ji < jointCount; ji++) {
-        result.push({ fingerIndex: fi, jointIndex: ji });
-      }
-    }
-    return result;
-  }, [handRef]);
+function FingerJointSphere({
+  fingerIndex,
+  jointIndex,
+  handRef,
+  hovered,
+  visible,
+  onPointerEnter,
+  onPointerLeave,
+}) {
+  const meshRef = useRef(null);
+  const worldPos = useMemo(() => new THREE.Vector3(), []);
+  const finger = FINGERS[fingerIndex];
+  const radius = finger.hitRadii[jointIndex];
 
   useFrame(() => {
-    const hand = handRef.current;
-    if (!hand) return;
+    const mesh = meshRef.current;
+    const api = handRef.current;
+    const bone = api?.getFingers?.()?.[fingerIndex]?.bones?.[jointIndex];
+    const handGroup = api?.getHandGroup?.();
+    if (!mesh || !bone || !handGroup) return;
 
-    const fingers = hand.getFingers?.() ?? [];
-    meshesRef.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      const zone = zones[i];
-      if (!zone) return;
+    bone.getWorldPosition(worldPos);
+    handGroup.worldToLocal(worldPos);
+    mesh.position.copy(worldPos);
 
-      const finger = fingers[zone.fingerIndex];
-      if (!finger?.bones?.[zone.jointIndex]) return;
-
-      // Update mesh position to follow bone world position
-      const bone = finger.bones[zone.jointIndex];
-      bone.getWorldPosition(mesh.position);
-    });
+    const localRadius = radius / handGroup.scale.x;
+    mesh.scale.set(localRadius, localRadius, localRadius);
+    mesh.updateMatrixWorld(true);
   });
 
   return (
-    <group>
-      {zones.map((zone, i) => (
-        <mesh
-          key={`${zone.fingerIndex}-${zone.jointIndex}`}
-          ref={(el) => (meshesRef.current[i] = el)}
-          onPointerEnter={(e) => {
-            e.stopPropagation();
-            onPointerEnter(zone.fingerIndex);
-          }}
-          onPointerLeave={(e) => {
-            e.stopPropagation();
-            onPointerLeave();
-          }}
-          visible={false}
-        >
-          <sphereGeometry args={[0.018, 6, 6]} />
-          <meshBasicMaterial />
-        </mesh>
-      ))}
+    <mesh
+      ref={meshRef}
+      renderOrder={visible ? 10 : 0}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        onPointerEnter(fingerIndex);
+      }}
+      onPointerOut={(e) => {
+        e.stopPropagation();
+        onPointerLeave();
+      }}
+    >
+      <sphereGeometry args={[1, 16, 16]} />
+      <meshBasicMaterial
+        color={finger.color}
+        transparent
+        opacity={visible ? (hovered ? 0.65 : 0.4) : 0}
+        depthWrite={false}
+        depthTest={visible}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+/** Always active for hover; visibility controlled by `visible` prop. */
+export default function HitZones({
+  handRef,
+  hoveredFinger,
+  visible,
+  onPointerEnter,
+  onPointerLeave,
+}) {
+  return (
+    <group name="finger-hit-zones">
+      {FINGERS.map((finger, fingerIndex) =>
+        finger.hitRadii.map((_, jointIndex) => (
+          <FingerJointSphere
+            key={`${finger.name}-${jointIndex}`}
+            fingerIndex={fingerIndex}
+            jointIndex={jointIndex}
+            handRef={handRef}
+            hovered={hoveredFinger === fingerIndex}
+            visible={visible}
+            onPointerEnter={onPointerEnter}
+            onPointerLeave={onPointerLeave}
+          />
+        )),
+      )}
     </group>
   );
 }
