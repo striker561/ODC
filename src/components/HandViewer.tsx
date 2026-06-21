@@ -6,6 +6,7 @@ import HandModel from "@/components/HandModel";
 import HitZones from "@/components/HitZones";
 import LoadingScreen from "@/components/LoadingScreen";
 import Scene from "@/components/Scene";
+import { ORBIT_CONFIG } from "@/constants/scene";
 import { useFingerAnimation } from "@/hooks/useFingerAnimation";
 import { useHandSignSequence } from "@/hooks/useHandSignSequence";
 import type { FingerIndex, HandModelApi } from "@/types/hand";
@@ -87,12 +88,12 @@ export default function HandViewer() {
       </Suspense>
       <OrbitControls
         enableDamping
-        dampingFactor={0.06}
+        dampingFactor={ORBIT_CONFIG.dampingFactor}
         enablePan={false}
         enableZoom={false}
-        target={[0, 0.02, 0]}
-        minPolarAngle={Math.PI * 0.22}
-        maxPolarAngle={Math.PI * 0.48}
+        target={[...ORBIT_CONFIG.target]}
+        minPolarAngle={ORBIT_CONFIG.minPolarAngle}
+        maxPolarAngle={ORBIT_CONFIG.maxPolarAngle}
       />
     </>
   );

@@ -4,6 +4,7 @@ import { AppProvider } from "@/components/AppProvider";
 import ChakraDust from "@/components/ChakraDust";
 import HandViewer from "@/components/HandViewer";
 import UI from "@/components/UI";
+import { CAMERA_CONFIG } from "@/constants/scene";
 import { useAppContext } from "@/hooks/useAppContext";
 
 function HandCanvas() {
@@ -11,12 +12,17 @@ function HandCanvas() {
 
   return (
     <Canvas
-      camera={{ fov: 42, position: [0, 0.08, 0.5], near: 0.01, far: 100 }}
+      camera={{
+        fov: CAMERA_CONFIG.fov,
+        position: [...CAMERA_CONFIG.position],
+        near: CAMERA_CONFIG.near,
+        far: CAMERA_CONFIG.far,
+      }}
       gl={{
         antialias: true,
         alpha: true,
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.08,
+        toneMappingExposure: 1.05,
       }}
       style={{ display: "block", background: "transparent" }}
       onPointerMissed={() => {

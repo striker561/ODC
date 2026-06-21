@@ -16,6 +16,7 @@ import {
   IDLE_HANDOFF_IN_SEC,
   IDLE_HANDOFF_OUT_SEC,
 } from "@/constants/animations";
+import { HAND_DISPLAY_SCALE } from "@/constants/scene";
 import type {
   ApplyFingerPoseOptions,
   BoneRotation,
@@ -411,7 +412,7 @@ function computeTransform(model: THREE.Object3D): HandTransform {
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z, 0.001);
-  const scale = 0.35 / maxDim;
+  const scale = HAND_DISPLAY_SCALE / maxDim;
 
   return {
     scale: [scale, scale, scale],
@@ -552,6 +553,7 @@ const HandModel = forwardRef<HandModelApi, HandModelProps>(function HandModel(
       handoffRef.current = 0;
       modeRef.current = "toIdle";
       action.enabled = true;
+      action.play();
       action.paused = false;
       action.fadeIn(IDLE_HANDOFF_IN_SEC);
     }
@@ -571,8 +573,7 @@ const HandModel = forwardRef<HandModelApi, HandModelProps>(function HandModel(
         handoffRef.current + delta / IDLE_HANDOFF_OUT_SEC,
       );
       if (handoffRef.current >= 1) {
-        action.stop();
-        action.setEffectiveWeight(0);
+        action.paused = true;
         modeRef.current = "manual";
       }
       return;
