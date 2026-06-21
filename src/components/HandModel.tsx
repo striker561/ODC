@@ -1,14 +1,21 @@
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   type ReactNode,
 } from "react";
 import { useGLTF } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { FINGER_COUNT, FINGERS } from "@/constants/fingers";
+import {
+  GLB_IDLE_ANIMATION,
+  IDLE_HANDOFF_IN_SEC,
+  IDLE_HANDOFF_OUT_SEC,
+} from "@/constants/animations";
 import type {
   ApplyFingerPoseOptions,
   BoneRotation,
@@ -16,7 +23,9 @@ import type {
   HandData,
   HandModelApi,
   ResolvedFinger,
+  RotationAxis,
 } from "@/types/hand";
+import { easeOutCubic } from "@/utils/easing";
 import { toFingerIndex } from "@/utils/fingers";
 
 const SKIN_BASE = new THREE.Color(0xd4a07a);
@@ -410,17 +419,78 @@ function computeTransform(model: THREE.Object3D): HandTransform {
   };
 }
 
+type IdleControlMode = "idle" | "toManual" | "manual" | "toIdle";
+
+function captureFingerSnapshot(
+  fingers: ResolvedFinger[],
+): Record<string, BoneRotation> {
+  const snapshot: Record<string, BoneRotation> = {};
+  for (const finger of fingers) {
+    for (const bone of finger.bones) {
+      snapshot[bone.name] = {
+        x: bone.rotation.x,
+        y: bone.rotation.y,
+        z: bone.rotation.z,
+      };
+    }
+  }
+  return snapshot;
+}
+
+function computeManualRotation(
+  orig: BoneRotation,
+  axis: RotationAxis,
+  delta: number,
+): BoneRotation {
+  const manual = { x: orig.x, y: orig.y, z: orig.z };
+  manual[axis] = orig[axis] + delta;
+  return manual;
+}
+
+function applyBlendedFingerPose(
+  data: HandData,
+  fingerIndex: FingerIndex,
+  progress: number,
+  blend: number,
+  snapshot: Record<string, BoneRotation>,
+): void {
+  const finger = data.fingers[fingerIndex];
+  if (!finger?.bones.length) return;
+
+  const { axis, amounts } = finger.pose;
+  finger.bones.forEach((bone, i) => {
+    const orig = data.originalRotations[bone.name];
+    if (!bone || !orig) return;
+
+    const curlDelta = (amounts[i] ?? amounts[amounts.length - 1]) * progress;
+    const manual = computeManualRotation(orig, axis, curlDelta);
+    const from = snapshot[bone.name] ?? orig;
+
+    bone.rotation.x = from.x + (manual.x - from.x) * blend;
+    bone.rotation.y = from.y + (manual.y - from.y) * blend;
+    bone.rotation.z = from.z + (manual.z - from.z) * blend;
+  });
+}
+
 interface HandModelProps {
   children?: ReactNode;
+  /** When true, GLB idle clip is paused and finger poses drive the skeleton. */
+  manualPoseActive?: boolean;
 }
 
 const HandModel = forwardRef<HandModelApi, HandModelProps>(function HandModel(
-  { children },
+  { children, manualPoseActive = false },
   ref,
 ) {
-  const { scene } = useGLTF("/hand.glb");
+  const { scene, animations } = useGLTF("/hand.glb");
   const groupRef = useRef<THREE.Group>(null);
   const modelRef = useRef<THREE.Object3D | null>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const idleActionRef = useRef<THREE.AnimationAction | null>(null);
+  const modeRef = useRef<IdleControlMode>("idle");
+  const handoffRef = useRef(0);
+  const snapshotRef = useRef<Record<string, BoneRotation>>({});
+  const prevManualPoseRef = useRef(manualPoseActive);
 
   const { model, handData, transform } = useMemo(() => {
     const cloned = SkeletonUtils.clone(scene);
@@ -433,6 +503,98 @@ const HandModel = forwardRef<HandModelApi, HandModelProps>(function HandModel(
   modelRef.current = model;
   const dataRef = useRef(handData);
   dataRef.current = handData;
+
+  useEffect(() => {
+    if (!animations.length) return;
+
+    const mixer = new THREE.AnimationMixer(model);
+    const clip =
+      animations.find((a) => a.name === GLB_IDLE_ANIMATION) ?? animations[0];
+    const action = mixer.clipAction(clip);
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    action.clampWhenFinished = false;
+    action.play();
+
+    mixerRef.current = mixer;
+    idleActionRef.current = action;
+    modeRef.current = "idle";
+    handoffRef.current = 0;
+
+    return () => {
+      action.stop();
+      mixer.stopAllAction();
+      mixerRef.current = null;
+      idleActionRef.current = null;
+    };
+  }, [model, animations]);
+
+  useEffect(() => {
+    const action = idleActionRef.current;
+    const data = dataRef.current;
+    if (!action || !data) {
+      prevManualPoseRef.current = manualPoseActive;
+      return;
+    }
+
+    const wasManual = prevManualPoseRef.current;
+    prevManualPoseRef.current = manualPoseActive;
+
+    if (manualPoseActive && !wasManual) {
+      snapshotRef.current = captureFingerSnapshot(data.fingers);
+      handoffRef.current = 0;
+      modeRef.current = "toManual";
+      action.enabled = true;
+      action.fadeOut(IDLE_HANDOFF_OUT_SEC);
+      return;
+    }
+
+    if (!manualPoseActive && wasManual) {
+      handoffRef.current = 0;
+      modeRef.current = "toIdle";
+      action.enabled = true;
+      action.paused = false;
+      action.fadeIn(IDLE_HANDOFF_IN_SEC);
+    }
+  }, [manualPoseActive]);
+
+  useFrame((_, delta) => {
+    const mixer = mixerRef.current;
+    const action = idleActionRef.current;
+    if (!mixer || !action) return;
+
+    const mode = modeRef.current;
+
+    if (mode === "toManual") {
+      mixer.update(delta);
+      handoffRef.current = Math.min(
+        1,
+        handoffRef.current + delta / IDLE_HANDOFF_OUT_SEC,
+      );
+      if (handoffRef.current >= 1) {
+        action.stop();
+        action.setEffectiveWeight(0);
+        modeRef.current = "manual";
+      }
+      return;
+    }
+
+    if (mode === "toIdle") {
+      mixer.update(delta);
+      handoffRef.current = Math.min(
+        1,
+        handoffRef.current + delta / IDLE_HANDOFF_IN_SEC,
+      );
+      if (handoffRef.current >= 1) {
+        modeRef.current = "idle";
+        handoffRef.current = 0;
+      }
+      return;
+    }
+
+    if (mode === "idle") {
+      mixer.update(delta);
+    }
+  }, -2);
 
   useImperativeHandle(ref, () => ({
     getFingers: () => dataRef.current?.fingers ?? [],
@@ -457,19 +619,42 @@ const HandModel = forwardRef<HandModelApi, HandModelProps>(function HandModel(
       const data = dataRef.current;
       if (!data) return;
 
-      const finger = data.fingers[fingerIndex];
-      if (!finger?.bones.length) return;
+      const mode = modeRef.current;
 
-      const { axis, amounts } = finger.pose;
-      finger.bones.forEach((bone, i) => {
-        if (!bone || !data.originalRotations[bone.name]) return;
-        const orig = data.originalRotations[bone.name];
-        const delta = (amounts[i] ?? amounts[amounts.length - 1]) * progress;
-        bone.rotation.x = orig.x;
-        bone.rotation.y = orig.y;
-        bone.rotation.z = orig.z;
-        bone.rotation[axis] = orig[axis] + delta;
-      });
+      if (mode === "toManual") {
+        if (opts.skipIfIdle && progress < 0.001) return;
+        const blend = easeOutCubic(handoffRef.current);
+        applyBlendedFingerPose(
+          data,
+          fingerIndex,
+          progress,
+          blend,
+          snapshotRef.current,
+        );
+      } else if (mode === "manual") {
+        if (opts.skipIfIdle && progress < 0.001) return;
+        applyBlendedFingerPose(
+          data,
+          fingerIndex,
+          progress,
+          1,
+          snapshotRef.current,
+        );
+      } else {
+        const finger = data.fingers[fingerIndex];
+        if (!finger?.bones.length) return;
+
+        const { axis, amounts } = finger.pose;
+        finger.bones.forEach((bone, i) => {
+          if (!bone || !data.originalRotations[bone.name]) return;
+          const orig = data.originalRotations[bone.name];
+          const delta = (amounts[i] ?? amounts[amounts.length - 1]) * progress;
+          bone.rotation.x = orig.x;
+          bone.rotation.y = orig.y;
+          bone.rotation.z = orig.z;
+          bone.rotation[axis] = orig[axis] + delta;
+        });
+      }
 
       if (opts.skipEmissive) return;
 

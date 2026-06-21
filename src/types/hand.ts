@@ -39,6 +39,8 @@ export interface HandData {
 
 export interface ApplyFingerPoseOptions {
   skipEmissive?: boolean;
+  /** When true, progress ≈ 0 leaves bones unchanged (hover handoff). */
+  skipIfIdle?: boolean;
 }
 
 export interface HandModelApi {

@@ -23,9 +23,17 @@ function HandInteraction() {
   const hoverState = useFingerAnimation(signModeActive ? null : hoveredFinger);
   const signState = useHandSignSequence(signModeActive, setCurrentSign);
 
+  const manualPoseActive = signModeActive || hoveredFinger !== null;
+
   useFrame(() => {
     const api = handRef.current;
     if (!api) return;
+
+    if (!manualPoseActive) {
+      api.updateMatrices();
+      return;
+    }
+
     api.updateMatrices();
 
     const fingerState = signModeActive ? signState.current : hoverState.current;
@@ -37,7 +45,9 @@ function HandInteraction() {
       );
     } else {
       fingerState.forEach((s, i) =>
-        api.applyFingerPose(i as FingerIndex, s.progress),
+        api.applyFingerPose(i as FingerIndex, s.progress, {
+          skipIfIdle: true,
+        }),
       );
     }
 
@@ -56,7 +66,7 @@ function HandInteraction() {
   }, [signModeActive, setHoveredFinger]);
 
   return (
-    <HandModel ref={handRef}>
+    <HandModel ref={handRef} manualPoseActive={manualPoseActive}>
       <HitZones
         handRef={handRef}
         hoveredFinger={hoveredFinger}
