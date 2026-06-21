@@ -1,12 +1,12 @@
-import { createContext, useContext, useState } from "react";
+import { useState, type PropsWithChildren } from "react";
+import { AppContext } from "@/context/app-context";
+import type { FingerIndex } from "@/types/hand";
 
-const AppContext = createContext(null);
-
-export function AppProvider({ children }) {
-  const [hoveredFinger, setHoveredFinger] = useState(null);
+export function AppProvider({ children }: PropsWithChildren) {
+  const [hoveredFinger, setHoveredFinger] = useState<FingerIndex | null>(null);
   const [showHitZones, setShowHitZones] = useState(false);
   const [signModeActive, setSignModeActive] = useState(false);
-  const [currentSign, setCurrentSign] = useState(null);
+  const [currentSign, setCurrentSign] = useState<string | null>(null);
 
   return (
     <AppContext.Provider
@@ -24,10 +24,4 @@ export function AppProvider({ children }) {
       {children}
     </AppContext.Provider>
   );
-}
-
-export function useAppContext() {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useAppContext must be used within AppProvider");
-  return ctx;
 }

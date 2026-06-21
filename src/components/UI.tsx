@@ -1,5 +1,5 @@
-import { useAppContext } from "./AppContext";
-import { FINGERS } from "./HandModel";
+import { FINGERS } from "@/constants/fingers";
+import { useAppContext } from "@/hooks/useAppContext";
 
 export default function UI() {
   const {

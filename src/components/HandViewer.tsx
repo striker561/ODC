@@ -1,16 +1,17 @@
-import { Suspense, useRef, useCallback } from "react";
+import { Suspense, useCallback, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import HandModel from "./HandModel";
-import HitZones from "./HitZones";
-import LoadingScreen from "./LoadingScreen";
-import Scene from "./Scene";
-import { useAppContext } from "./AppContext";
-import { useFingerAnimation } from "../hooks/useFingerAnimation";
-import { useHandSignSequence } from "../hooks/useHandSignSequence";
+import { useAppContext } from "@/hooks/useAppContext";
+import HandModel from "@/components/HandModel";
+import HitZones from "@/components/HitZones";
+import LoadingScreen from "@/components/LoadingScreen";
+import Scene from "@/components/Scene";
+import { useFingerAnimation } from "@/hooks/useFingerAnimation";
+import { useHandSignSequence } from "@/hooks/useHandSignSequence";
+import type { FingerIndex, HandModelApi } from "@/types/hand";
 
 function HandInteraction() {
-  const handRef = useRef(null);
+  const handRef = useRef<HandModelApi>(null);
   const {
     hoveredFinger,
     setHoveredFinger,
@@ -30,17 +31,21 @@ function HandInteraction() {
     const fingerState = signModeActive ? signState.current : hoverState.current;
     if (signModeActive) {
       fingerState.forEach((s, i) =>
-        api.applyFingerPose(i, s.progress, { skipEmissive: true }),
+        api.applyFingerPose(i as FingerIndex, s.progress, {
+          skipEmissive: true,
+        }),
       );
     } else {
-      fingerState.forEach((s, i) => api.applyFingerPose(i, s.progress));
+      fingerState.forEach((s, i) =>
+        api.applyFingerPose(i as FingerIndex, s.progress),
+      );
     }
 
     api.updateMatrices();
   }, -1);
 
   const handlePointerEnter = useCallback(
-    (fingerIndex) => {
+    (fingerIndex: FingerIndex) => {
       if (!signModeActive) setHoveredFinger(fingerIndex);
     },
     [signModeActive, setHoveredFinger],

@@ -1,7 +1,18 @@
 import { useFrame } from "@react-three/fiber";
-import { useRef, useMemo } from "react";
+import { useMemo, useRef, type RefObject } from "react";
 import * as THREE from "three";
-import { FINGERS } from "./HandModel";
+import { FINGERS } from "@/constants/fingers";
+import type { FingerIndex, HandModelApi } from "@/types/hand";
+
+interface FingerJointSphereProps {
+  fingerIndex: FingerIndex;
+  jointIndex: number;
+  handRef: RefObject<HandModelApi | null>;
+  hovered: boolean;
+  visible: boolean;
+  onPointerEnter: (fingerIndex: FingerIndex) => void;
+  onPointerLeave: () => void;
+}
 
 function FingerJointSphere({
   fingerIndex,
@@ -11,8 +22,8 @@ function FingerJointSphere({
   visible,
   onPointerEnter,
   onPointerLeave,
-}) {
-  const meshRef = useRef(null);
+}: FingerJointSphereProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
   const worldPos = useMemo(() => new THREE.Vector3(), []);
   const finger = FINGERS[fingerIndex];
   const radius = finger.hitRadii[jointIndex];
@@ -20,7 +31,7 @@ function FingerJointSphere({
   useFrame(() => {
     const mesh = meshRef.current;
     const api = handRef.current;
-    const bone = api?.getFingers?.()?.[fingerIndex]?.bones?.[jointIndex];
+    const bone = api?.getFingers()?.[fingerIndex]?.bones?.[jointIndex];
     const handGroup = api?.getHandGroup?.();
     if (!mesh || !bone || !handGroup) return;
 
@@ -59,6 +70,14 @@ function FingerJointSphere({
   );
 }
 
+export interface HitZonesProps {
+  handRef: RefObject<HandModelApi | null>;
+  hoveredFinger: FingerIndex | null;
+  visible: boolean;
+  onPointerEnter: (fingerIndex: FingerIndex) => void;
+  onPointerLeave: () => void;
+}
+
 /** Always active for hover; visibility controlled by `visible` prop. */
 export default function HitZones({
   handRef,
@@ -66,14 +85,14 @@ export default function HitZones({
   visible,
   onPointerEnter,
   onPointerLeave,
-}) {
+}: HitZonesProps) {
   return (
     <group name="finger-hit-zones">
       {FINGERS.map((finger, fingerIndex) =>
         finger.hitRadii.map((_, jointIndex) => (
           <FingerJointSphere
             key={`${finger.name}-${jointIndex}`}
-            fingerIndex={fingerIndex}
+            fingerIndex={fingerIndex as FingerIndex}
             jointIndex={jointIndex}
             handRef={handRef}
             hovered={hoveredFinger === fingerIndex}

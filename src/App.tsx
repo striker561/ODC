@@ -1,9 +1,10 @@
 import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
-import { AppProvider, useAppContext } from "./components/AppContext";
-import HandViewer from "./components/HandViewer";
-import UI from "./components/UI";
-import ChakraDust from "./components/ChakraDust";
+import { AppProvider } from "@/components/AppProvider";
+import ChakraDust from "@/components/ChakraDust";
+import HandViewer from "@/components/HandViewer";
+import UI from "@/components/UI";
+import { useAppContext } from "@/hooks/useAppContext";
 
 function HandCanvas() {
   const { setHoveredFinger, signModeActive } = useAppContext();
@@ -14,7 +15,6 @@ function HandCanvas() {
       gl={{
         antialias: true,
         alpha: true,
-        shadowMap: { enabled: true, type: "PCFSoftShadowMap" },
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.08,
       }}

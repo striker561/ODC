@@ -1,100 +1,90 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
+import { FINGER_COUNT, FINGERS } from "@/constants/fingers";
+import type {
+  ApplyFingerPoseOptions,
+  BoneRotation,
+  FingerIndex,
+  HandData,
+  HandModelApi,
+  ResolvedFinger,
+} from "@/types/hand";
+import { toFingerIndex } from "@/utils/fingers";
 
-// ── Skin colour constants ─────────────────────────────────────────────────
-const SKIN_BASE = new THREE.Color(0xd4a07a); // warm Caucasian flesh
-const SKIN_PALM = new THREE.Color(0xc48a6a); // palm — slightly lighter
-const SKIN_TIP = new THREE.Color(0xd47a5a); // fingertip — redder (blood)
-const SKIN_KNUCKLE = new THREE.Color(0xa06850); // knuckle — slightly darker
-const SSS_GLOW = new THREE.Color(0xff6633); // subsurface warm glow
-
-export const FINGERS = [
-  {
-    name: "Index",
-    patterns: ["Bone009_02", "Bone010_03", "Bone011_04", "Bone011_end_017"],
-    color: "#4a9eff",
-    hitRadii: [0.024, 0.028, 0.03],
-    pose: { axis: "x", amounts: [-0.37, -0.13, -0.18] },
-  },
-  {
-    name: "Middle",
-    patterns: ["Bone012_05", "Bone013_06", "Bone014_07", "Bone014_end_018"],
-    color: "#a78bfa",
-    hitRadii: [0.032, 0.034, 0.036],
-    pose: { axis: "x", amounts: [-0.37, -0.13, -0.18] },
-  },
-  {
-    name: "Ring",
-    patterns: ["Bone015_08", "Bone016_09", "Bone017_010", "Bone017_end_019"],
-    color: "#34d399",
-    hitRadii: [0.032, 0.034, 0.036],
-    pose: { axis: "x", amounts: [-0.37, -0.13, -0.18] },
-  },
-  {
-    name: "Pinky",
-    patterns: ["Bone018_011", "Bone019_012", "Bone020_013", "Bone020_end_020"],
-    color: "#f472b6",
-    hitRadii: [0.028, 0.03, 0.032],
-    pose: { axis: "x", amounts: [-0.37, -0.13, -0.18] },
-  },
-  {
-    name: "Thumb",
-    patterns: ["Bone003_014", "Bone004_015", "Bone005_016", "Bone005_end_021"],
-    color: "#fbbf24",
-    hitRadii: [0.03, 0.032, 0.034],
-    pose: { axis: "z", amounts: [-0.12, -0.16, -0.3] },
-  },
-];
-
+const SKIN_BASE = new THREE.Color(0xd4a07a);
+const SKIN_PALM = new THREE.Color(0xc48a6a);
+const SKIN_TIP = new THREE.Color(0xd47a5a);
+const SSS_GLOW = new THREE.Color(0xff6633);
 const PALM_BONE = "Bone001_01";
 
-function boneKey(name) {
+function boneKey(name: string): string {
   return name.replace(/\./g, "");
 }
 
-function findBone(bones, pattern) {
+function findBone(
+  bones: Record<string, THREE.Bone>,
+  pattern: string,
+): THREE.Bone | undefined {
   return bones[pattern] ?? bones[boneKey(pattern)];
 }
 
-function hideDebugObjects(root) {
+function hideDebugObjects(root: THREE.Object3D): void {
   root.traverse((obj) => {
     if (
-      obj.isSkeletonHelper ||
+      (obj as THREE.SkeletonHelper).isSkeletonHelper ||
       obj.type === "AxesHelper" ||
-      obj.isLine ||
-      obj.isLineSegments ||
-      obj.isLineLoop
+      obj.type === "Line" ||
+      obj.type === "LineSegments" ||
+      obj.type === "LineLoop"
     ) {
       obj.visible = false;
     }
   });
 }
 
-function collectChain(baseBone) {
-  const chain = [];
-  let bone = baseBone;
+function isBone(obj: THREE.Object3D): obj is THREE.Bone {
+  return (obj as THREE.Bone).isBone === true;
+}
+
+function isSkinnedMesh(obj: THREE.Object3D): obj is THREE.SkinnedMesh {
+  return (obj as THREE.SkinnedMesh).isSkinnedMesh === true;
+}
+
+function isMesh(obj: THREE.Object3D): obj is THREE.Mesh {
+  return (obj as THREE.Mesh).isMesh === true;
+}
+
+function collectChain(baseBone: THREE.Bone): THREE.Bone[] {
+  const chain: THREE.Bone[] = [];
+  let bone: THREE.Bone | null = baseBone;
   while (bone?.isBone) {
     if (!bone.name.includes("_end")) chain.push(bone);
-    const next = bone.children.find((c) => c.isBone);
+    const next: THREE.Bone | undefined = bone.children.find(isBone);
     bone = next ?? null;
   }
   return chain.slice(0, 3);
 }
 
-function discoverFingers(bones) {
+function discoverFingers(
+  bones: Record<string, THREE.Bone>,
+): ResolvedFinger[] | null {
   const palm = findBone(bones, PALM_BONE);
   if (!palm?.children?.length) return null;
 
-  const chains = palm.children
-    .filter((c) => c.isBone)
-    .map((base) => ({
-      base,
-      chain: collectChain(base),
-      localY: base.position.y,
-      localX: base.position.x,
-    }));
+  const chains = palm.children.filter(isBone).map((base) => ({
+    base,
+    chain: collectChain(base),
+    localY: base.position.y,
+    localX: base.position.x,
+  }));
 
   if (chains.length < 5) return null;
 
@@ -111,21 +101,24 @@ function discoverFingers(bones) {
   }));
 }
 
-function resolveFingers(bones) {
-  const fromPatterns = FINGERS.map((f) => ({
+function resolveFingers(bones: Record<string, THREE.Bone>): ResolvedFinger[] {
+  const fromPatterns: ResolvedFinger[] = FINGERS.map((f) => ({
     ...f,
     bones: f.patterns
       .filter((p) => !p.includes("_end"))
       .map((p) => findBone(bones, p))
-      .filter(Boolean),
+      .filter((b): b is THREE.Bone => Boolean(b)),
   }));
 
   if (fromPatterns.every((f) => f.bones.length === 3)) return fromPatterns;
   return discoverFingers(bones) ?? fromPatterns;
 }
 
-function buildBoneIndexToFinger(skeleton, fingers) {
-  const boneToFinger = new Map();
+function buildBoneIndexToFinger(
+  skeleton: THREE.Skeleton,
+  fingers: ResolvedFinger[],
+): number[] {
+  const boneToFinger = new Map<string, number>();
   fingers.forEach((finger, fingerIndex) => {
     finger.patterns.forEach((name) => {
       boneToFinger.set(name, fingerIndex);
@@ -139,19 +132,18 @@ function buildBoneIndexToFinger(skeleton, fingers) {
   );
 }
 
-// ── Procedural normal map ─────────────────────────────────────────────────
-let cachedSkinNormalMap = null;
+let cachedSkinNormalMap: THREE.CanvasTexture | null = null;
 
-function createSkinNormalMap(size = 384) {
+function createSkinNormalMap(size = 384): THREE.CanvasTexture {
   if (cachedSkinNormalMap) return cachedSkinNormalMap;
 
-  function hash(x, y) {
+  function hash(x: number, y: number): number {
     let h = x * 374761393 + y * 668265263;
     h = (h ^ (h >> 13)) * 1274126177;
     return (h ^ (h >> 16)) & 0xff;
   }
 
-  function smoothNoise(x, y) {
+  function smoothNoise(x: number, y: number): number {
     const ix = Math.floor(x);
     const iy = Math.floor(y);
     const fx = x - ix;
@@ -165,7 +157,7 @@ function createSkinNormalMap(size = 384) {
     return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
   }
 
-  function fbm(x, y, octaves = 4) {
+  function fbm(x: number, y: number, octaves = 4): number {
     let value = 0;
     let amplitude = 0.5;
     let freq = 6;
@@ -177,7 +169,7 @@ function createSkinNormalMap(size = 384) {
     return value;
   }
 
-  function heightAt(u, v) {
+  function heightAt(u: number, v: number): number {
     const pores = fbm(u * 14, v * 14, 3) * 0.22;
     const fine = fbm(u * 28 + 17, v * 28 + 31, 2) * 0.06;
     const creases = fbm(u * 2.8 + 90, v * 2.8, 2) * 0.05;
@@ -193,6 +185,8 @@ function createSkinNormalMap(size = 384) {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not create canvas 2d context");
+
   const imageData = ctx.createImageData(size, size);
   const data = imageData.data;
   const strength = 1.5;
@@ -230,13 +224,15 @@ function createSkinNormalMap(size = 384) {
   return texture;
 }
 
-// ── Vertex colour blend for skin variation ─────────────────────────────────
-function applySkinVertexColors(mesh, fingers, boneIndexToFinger) {
+function applySkinVertexColors(
+  mesh: THREE.SkinnedMesh,
+  boneIndexToFinger: number[],
+): void {
   const { geometry } = mesh;
   const pos = geometry.attributes.position;
   const skinIndex = geometry.attributes.skinIndex;
   const skinWeight = geometry.attributes.skinWeight;
-  if (!pos || !skinIndex || !skinWeight || !boneIndexToFinger) return;
+  if (!pos || !skinIndex || !skinWeight) return;
 
   const count = pos.count;
   const colors = new Float32Array(count * 3);
@@ -257,7 +253,7 @@ function applySkinVertexColors(mesh, fingers, boneIndexToFinger) {
     }
 
     const y = pos.getY(v);
-    let color;
+    let color: THREE.Color;
     if (fingerIdx >= 0 && maxW > 0.04) {
       const tipFactor = Math.max(0, Math.min(1, (y + 0.3) / 0.25));
       color = SKIN_BASE.clone().lerp(SKIN_TIP, tipFactor * 0.55);
@@ -273,68 +269,51 @@ function applySkinVertexColors(mesh, fingers, boneIndexToFinger) {
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
-// ── Main skin material ─────────────────────────────────────────────────────
-function applySkinMaterial(mesh, fingers, boneIndexToFinger) {
-  if (!mesh.isSkinnedMesh) return;
-
-  // Remove old color attribute
+function applySkinMaterial(
+  mesh: THREE.SkinnedMesh,
+  boneIndexToFinger: number[],
+): void {
   if (mesh.geometry.attributes.color) mesh.geometry.deleteAttribute("color");
 
   const normalMap = createSkinNormalMap();
 
   const mat = new THREE.MeshPhysicalMaterial({
-    // Base solid colour — vertex colors override per-pixel
     color: SKIN_BASE,
     roughness: 0.48,
-    roughnessMap: null,
     metalness: 0.0,
-
-    // Skin oil layer
     clearcoat: 0.06,
     clearcoatRoughness: 0.5,
-
-    // Velvety subsurface quality
     sheen: 0.3,
     sheenColor: new THREE.Color(0xffbb88),
     sheenRoughness: 0.5,
-
-    // Fake SSS — warm glow from within
     emissive: SSS_GLOW,
     emissiveIntensity: 0.035,
-
-    // Pore texture
     normalMap,
     normalScale: new THREE.Vector2(0.5, 0.5),
-
-    // Environment
     envMapIntensity: 0.4,
-
-    // Enable vertex colours for skin variation
     vertexColors: true,
   });
 
   mesh.material = mat;
-
-  // Apply vertex colour variation
-  applySkinVertexColors(mesh, fingers, boneIndexToFinger);
+  applySkinVertexColors(mesh, boneIndexToFinger);
 }
 
-function buildHandData(model) {
-  const bones = {};
-  const originals = {};
-  let skinnedMesh = null;
-  let boneIndexToFinger = null;
+function buildHandData(model: THREE.Object3D): HandData {
+  const bones: Record<string, THREE.Bone> = {};
+  const originalRotations: Record<string, BoneRotation> = {};
+  let skinnedMesh: THREE.SkinnedMesh | null = null;
+  let boneIndexToFinger: number[] | null = null;
 
   model.traverse((obj) => {
-    if (obj.isBone) {
+    if (isBone(obj)) {
       bones[obj.name] = obj;
-      originals[obj.name] = {
+      originalRotations[obj.name] = {
         x: obj.rotation.x,
         y: obj.rotation.y,
         z: obj.rotation.z,
       };
     }
-    if (obj.isMesh) {
+    if (isMesh(obj)) {
       obj.raycast = () => {};
       obj.castShadow = true;
       obj.receiveShadow = true;
@@ -344,23 +323,26 @@ function buildHandData(model) {
   const fingers = resolveFingers(bones);
 
   model.traverse((obj) => {
-    if (obj.isSkinnedMesh) {
+    if (isSkinnedMesh(obj)) {
       skinnedMesh = obj;
       boneIndexToFinger = buildBoneIndexToFinger(obj.skeleton, fingers);
-      applySkinMaterial(obj, fingers, boneIndexToFinger);
+      applySkinMaterial(obj, boneIndexToFinger);
     }
   });
 
   return {
     bones,
-    originalRotations: originals,
+    originalRotations,
     fingers,
     skinnedMesh,
     boneIndexToFinger,
   };
 }
 
-function pickFingerAtPoint(pointWorld, handData) {
+function pickFingerAtPoint(
+  pointWorld: THREE.Vector3,
+  handData: HandData | null,
+): FingerIndex | null {
   const mesh = handData?.skinnedMesh;
   const boneIndexToFinger = handData?.boneIndexToFinger;
   if (!mesh || !boneIndexToFinger) return null;
@@ -402,12 +384,17 @@ function pickFingerAtPoint(pointWorld, handData) {
     }
   }
 
-  return bestFinger >= 0 ? bestFinger : null;
+  return toFingerIndex(bestFinger);
 }
 
-function computeTransform(model) {
+interface HandTransform {
+  scale: [number, number, number];
+  position: [number, number, number];
+}
+
+function computeTransform(model: THREE.Object3D): HandTransform {
   model.traverse((obj) => {
-    if (obj.isSkinnedMesh) obj.skeleton?.update();
+    if (isSkinnedMesh(obj)) obj.skeleton?.update();
   });
   model.updateMatrixWorld(true);
 
@@ -423,17 +410,24 @@ function computeTransform(model) {
   };
 }
 
-const HandModel = forwardRef(function HandModel({ children }, ref) {
+interface HandModelProps {
+  children?: ReactNode;
+}
+
+const HandModel = forwardRef<HandModelApi, HandModelProps>(function HandModel(
+  { children },
+  ref,
+) {
   const { scene } = useGLTF("/hand.glb");
-  const groupRef = useRef(null);
-  const modelRef = useRef(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const modelRef = useRef<THREE.Object3D | null>(null);
 
   const { model, handData, transform } = useMemo(() => {
     const cloned = SkeletonUtils.clone(scene);
     hideDebugObjects(cloned);
-    const handData = buildHandData(cloned);
-    const transform = computeTransform(cloned);
-    return { model: cloned, handData, transform };
+    const data = buildHandData(cloned);
+    const tx = computeTransform(cloned);
+    return { model: cloned, handData: data, transform: tx };
   }, [scene]);
 
   modelRef.current = model;
@@ -443,26 +437,29 @@ const HandModel = forwardRef(function HandModel({ children }, ref) {
   useImperativeHandle(ref, () => ({
     getFingers: () => dataRef.current?.fingers ?? [],
     getBones: () => dataRef.current?.bones ?? {},
-    getFingerCount: () => FINGERS.length,
+    getFingerCount: () => FINGER_COUNT,
     getHandGroup: () => groupRef.current,
     pickFingerAtPoint: (point) => pickFingerAtPoint(point, dataRef.current),
     updateMatrices: () => {
       const root = modelRef.current;
       if (!root) return;
       root.traverse((obj) => {
-        if (obj.isSkinnedMesh) obj.skeleton?.update();
+        if (isSkinnedMesh(obj)) obj.skeleton?.update();
       });
       root.updateMatrixWorld(true);
       groupRef.current?.updateMatrixWorld(true);
     },
-    applyFingerPose: (fingerIndex, progress, opts = {}) => {
+    applyFingerPose: (
+      fingerIndex: FingerIndex,
+      progress: number,
+      opts: ApplyFingerPoseOptions = {},
+    ) => {
       const data = dataRef.current;
       if (!data) return;
 
       const finger = data.fingers[fingerIndex];
       if (!finger?.bones.length) return;
 
-      // ── Pose animation ─────────────────────────────────────────────
       const { axis, amounts } = finger.pose;
       finger.bones.forEach((bone, i) => {
         if (!bone || !data.originalRotations[bone.name]) return;
@@ -474,7 +471,6 @@ const HandModel = forwardRef(function HandModel({ children }, ref) {
         bone.rotation[axis] = orig[axis] + delta;
       });
 
-      // ── Fingertip blush (hover only — skipped during sign sequence) ─
       if (opts.skipEmissive) return;
 
       const mesh = data.skinnedMesh;
@@ -483,8 +479,8 @@ const HandModel = forwardRef(function HandModel({ children }, ref) {
           ? mesh.material
           : [mesh.material];
         mats.forEach((mat) => {
-          if (!mat.isMeshPhysicalMaterial) return;
-          const target = 0.035 + progress * 0.35; // 0.035 idle → 0.385 full hover
+          if (!(mat instanceof THREE.MeshPhysicalMaterial)) return;
+          const target = 0.035 + progress * 0.35;
           mat.emissiveIntensity += (target - mat.emissiveIntensity) * 0.12;
           if (progress > 0) {
             mat.emissive.setHSL(0.07, 0.9, 0.15 + progress * 0.2);
